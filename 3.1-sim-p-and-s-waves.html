@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>P-Waves and S-Waves</title>
+<!-- Single-file simulation. No libraries, works offline. Open in any browser, or host it (GitHub Pages) and link from Classroom. -->
+<style>
+  :root{--p:#d9480f;--s:#1971c2;--ink:#1f2937;--mute:#5b6472;--line:#d6dbe3;--bg:#f7f8fa;--navy:#1f3a5f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.4 system-ui,Arial,sans-serif}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  h1{font-size:1.6rem;margin:0 0 2px}
+  .sub{margin:0 0 12px;color:var(--mute)}
+  .controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  button{font:inherit;font-weight:700;padding:9px 16px;border:0;border-radius:8px;background:var(--navy);color:#fff;cursor:pointer}
+  button.alt{background:#e5e9f0;color:var(--ink)}
+  button.dist{padding:7px 12px;font-size:.95rem}
+  button.dist.on{background:var(--navy);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  label{display:flex;align-items:center;gap:6px;font-size:.95rem}
+  input[type=range]{width:110px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+  .panel h2{font-size:1.15rem;margin:0 0 4px}
+  .panel p{margin:2px 0 6px;color:var(--mute);font-size:.95rem}
+  .p h2{color:var(--p)} .s h2{color:var(--s)}
+  canvas{width:100%;display:block}
+  .readout{font-weight:700;min-height:1.5em}
+  .connect{font-size:.95rem}
+  .connect summary{cursor:pointer;font-size:1.15rem}
+  .connect li{margin-bottom:4px}
+  .key span{display:inline-block;margin-right:14px;font-size:.9rem}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:4px}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:.95rem}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+  th{background:#eef1f6}
+  #msg{color:var(--mute);font-size:.95rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>P-Waves and S-Waves</h1>
+  <p class="sub">Press Send Wave. Watch the red dot. Which way does it move?</p>
+
+  <div class="controls">
+    <div class="group">
+      <button id="send">Send Wave</button>
+      <button id="pause" class="alt">Pause</button>
+      <button id="reset" class="alt">Reset</button>
+    </div>
+    <div class="group"><b>Distance:</b> <span class="group" id="dists"></span></div>
+    <div class="group">
+      <label><input type="radio" name="mode" value="pulse" checked> One pulse</label>
+      <label><input type="radio" name="mode" value="train"> Keep shaking</label>
+    </div>
+    <label>Animation Speed <input id="speed" type="range" min="0.3" max="2.5" step="0.1" value="1"></label>
+    <label>Earthquake Size <input id="amp" type="range" min="0.4" max="1.4" step="0.1" value="1"></label>
+    <label><input id="liquid" type="checkbox"> Add a liquid zone</label>
+  </div>
+
+  <div class="panel p">
+    <h2>P-wave (Primary)</h2>
+    <canvas id="cp"></canvas>
+  </div>
+
+  <div class="panel s">
+    <h2>S-wave (Secondary)</h2>
+    <canvas id="cs"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>Seismogram at the station</h2>
+    <p>The station records how much the ground moves.</p>
+    <canvas id="ct"></canvas>
+    <div class="key"><span><i class="dot" style="background:var(--p)"></i>P-wave</span><span><i class="dot" style="background:var(--s)"></i>S-wave</span></div>
+    <div class="readout" id="readout"></div>
+    <button id="save" class="alt" style="margin-top:8px">Save seismogram (PNG)</button>
+  </div>
+
+  <div class="panel">
+    <h2>My data</h2>
+    <p>Send a wave. When the station finishes recording, press Record data point.</p>
+    <div class="group">
+      <button id="rec">Record data point</button>
+      <button id="copy" class="alt">Copy data</button>
+      <button id="clear" class="alt">Clear table</button>
+      <span id="msg"></span>
+    </div>
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <details class="panel connect">
+    <summary><b>Check your thinking</b> (describe what you saw first)</summary>
+    <ul>
+      <li>Human wave (stand up, sit down, the wave moves down the row): that is an <b>S-wave</b> motion. Students move up and down. The wave moves sideways.</li>
+      <li>Slinky push and pull: that is a <b>P-wave</b>. The coils squeeze together and spread apart.</li>
+      <li>Turn on the liquid zone. Liquids cannot be sheared, so the S-wave stops. P-waves keep going. This is how scientists learned Earth has a liquid outer core.</li>
+      <li>The gap between the P and S arrival tells you how far away the earthquake was.</li>
+    </ul>
+  </details>
+</main>
+
+<script>
+(function(){
+  var N = 72, R = 5, LAMBDA = 12, KM_PER_COL = 1000 / (N - 1);
+  var VP = 8, VS = VP / 1.7;                 // km per second
+  var CP = VP / KM_PER_COL, CS = VS / KM_PER_COL;  // columns per second
+  var LIQ0 = 32, LIQ1 = 46, TRACER = 18, WINDOW = 300, TS = 20;  // TS = sim seconds per real second at speed 1
+  var DISTS = [200, 400, 600, 800, 1000];
+  var P_COL = '#d9480f', S_COL = '#1971c2', GREY = '#9aa3b2';
+
+  var DEFAULT_KM = 400;
+  var TEACHER = /[?&]teacher/.test(location.search);  // add ?teacher to the address to show S minus P
+  var t = 0, mode = 'pulse', paused = false, running = false, speed = 1, amp = 1, liquid = false, km = DEFAULT_KM;
+  var holdUntil = 0;
+  var hist = [], arrive = {p: null, s: null}, rows = [];
+
+  var cvP = document.getElementById('cp'), cvS = document.getElementById('cs'), cvT = document.getElementById('ct');
+  var readout = document.getElementById('readout'), msg = document.getElementById('msg');
+  var saveBtn = document.getElementById('save'), recBtn = document.getElementById('rec'), tbody = document.getElementById('tbody');
+  var dwrap = document.getElementById('dists');
+
+  function stationX(){ return km / KM_PER_COL; }
+  function fmt(n){ return n === null ? 'none' : n.toFixed(1); }
+
+  // displacement of the particle at column x, sharp onset like a real seismic arrival
+  function disp(kind, x, time){
+    if (kind === 's' && liquid && x >= LIQ0) return 0;
+    var c = kind === 'p' ? CP : CS, A = amp * 1.1, d = c * time - x;
+    if (d <= 0) return 0;
+    if (mode === 'pulse'){
+      if (d > 3 * LAMBDA) return 0;
+      return A * Math.sin(2 * Math.PI * d / LAMBDA) * Math.exp(-d / LAMBDA);
+    }
+    return A * Math.min(1, d / (0.5 * LAMBDA)) * Math.sin(2 * Math.PI * d / LAMBDA);
+  }
+
+  function setup(cv, h){
+    var dpr = window.devicePixelRatio || 1, w = cv.clientWidth;
+    cv.style.height = h + 'px';
+    cv.width = w * dpr; cv.height = h * dpr;
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return {g: g, w: w, h: h};
+  }
+  var views;
+  function resize(){ views = {p: setup(cvP, 180), s: setup(cvS, 180), t: setup(cvT, 170)}; }
+
+  function drawWave(v, kind){
+    var g = v.g, w = v.w, h = v.h, pad = 24, sp = (w - 2 * pad) / (N - 1), rowSp = 24;
+    var top = 28, col = kind === 'p' ? P_COL : S_COL, i, r, bottom = top + (R - 1) * rowSp;
+    g.clearRect(0, 0, w, h);
+    if (liquid){
+      g.fillStyle = '#d0ebff';
+      g.fillRect(pad + LIQ0 * sp - sp / 2, 22, (LIQ1 - LIQ0) * sp, bottom - 22 + 12);
+      g.fillStyle = '#1864ab'; g.font = '13px system-ui,Arial'; g.textAlign = 'center';
+      g.fillText('Liquid', pad + (LIQ0 + LIQ1) / 2 * sp, 17);
+    }
+    for (i = 0; i < N; i++){
+      var u = disp(kind, i, t), stripe = (i % 6) < 2;
+      for (r = 0; r < R; r++){
+        var x0 = pad + i * sp, y0 = top + r * rowSp;
+        var px = x0 + (kind === 'p' ? u * sp * 0.9 : 0), py = y0 + (kind === 's' ? u * 8 : 0);
+        g.fillStyle = stripe ? col : GREY;
+        g.beginPath(); g.arc(px, py, 3, 0, 6.2832); g.fill();
+      }
+    }
+    // tracer dot: ghost ring at rest spot, red dot that moves, dashed line for its motion axis
+    var tx = pad + TRACER * sp, ty = top + 2 * rowSp, tu = disp(kind, TRACER, t);
+    g.strokeStyle = '#444'; g.lineWidth = 1; g.setLineDash([4, 3]);
+    g.beginPath();
+    if (kind === 'p'){ g.moveTo(tx - 34, ty); g.lineTo(tx + 34, ty); } else { g.moveTo(tx, ty - 34); g.lineTo(tx, ty + 34); }
+    g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.arc(tx, ty, 7, 0, 6.2832); g.stroke();
+    g.fillStyle = '#e03131';
+    g.beginPath(); g.arc(tx + (kind === 'p' ? tu * sp * 0.9 : 0), ty + (kind === 's' ? tu * 8 : 0), 5.5, 0, 6.2832); g.fill();
+    // station marker
+    var sx = pad + stationX() * sp, ky;
+    g.fillStyle = '#222';
+    g.beginPath(); g.moveTo(sx, bottom + 14); g.lineTo(sx - 7, bottom + 26); g.lineTo(sx + 7, bottom + 26); g.fill();
+    g.font = '12px system-ui,Arial'; g.textAlign = 'center';
+    g.fillText('station', Math.min(sx, w - 26), bottom + 40);
+    // distance scale
+    g.fillStyle = '#5b6472';
+    for (ky = 0; ky <= 1000; ky += 200){
+      g.textAlign = ky === 0 ? 'left' : (ky === 1000 ? 'right' : 'center');
+      g.fillText(ky === 1000 ? '1000 km' : ky === 0 ? '0 km' : ky, pad + ky / KM_PER_COL * sp, h - 4);
+    }
+    g.fillStyle = '#444'; g.textAlign = 'left';
+    g.fillText('wave travels →', 6, 17);
+  }
+
+  function drawTrace(v){
+    var g = v.g, w = v.w, h = v.h, pad = 14, mid = (h - 20) / 2 + 6, t0 = Math.max(0, t - WINDOW), k, tick;
+    g.clearRect(0, 0, w, h);
+    function X(time){ return pad + (time - t0) / WINDOW * (w - 2 * pad); }
+    g.strokeStyle = '#d6dbe3'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(pad, mid); g.lineTo(w - pad, mid); g.stroke();
+    g.fillStyle = '#5b6472'; g.font = '12px system-ui,Arial'; g.textAlign = 'center';
+    for (tick = Math.ceil(t0 / 50) * 50; tick <= t0 + WINDOW; tick += 50){
+      g.beginPath(); g.moveTo(X(tick), h - 18); g.lineTo(X(tick), h - 13); g.stroke();
+      g.fillText(tick, X(tick), h - 3);
+    }
+    function line(key, color){
+      g.strokeStyle = color; g.lineWidth = 2; g.beginPath();
+      for (k = 0; k < hist.length; k++){
+        var x = X(hist[k].t), y = mid - hist[k][key] * 34;
+        if (k === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    line('s', S_COL); line('p', P_COL);
+    function mark(time, label, color){
+      if (time === null) return;
+      var x = X(time);
+      g.strokeStyle = color; g.setLineDash([4, 3]); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, 18); g.lineTo(x, h - 20); g.stroke(); g.setLineDash([]);
+      g.fillStyle = color; g.font = 'bold 13px system-ui,Arial'; g.textAlign = 'center';
+      g.fillText(label, x, 13);
+    }
+    mark(arrive.p, 'P arrives', P_COL);
+    mark(arrive.s, 'S arrives', S_COL);
+    g.fillStyle = '#222'; g.font = 'bold 14px system-ui,Arial'; g.textAlign = 'left';
+    g.fillText('Time: ' + Math.round(t) + ' s', pad, 34);
+    g.fillStyle = '#5b6472'; g.font = '12px system-ui,Arial'; g.textAlign = 'right';
+    g.fillText('time (s) →', w - pad, h - 18);
+  }
+
+  function s_blocked(){ return liquid && stationX() >= LIQ0; }
+
+  // Sim time when a one-pulse run is over: last wave has passed the station, plus 10 s.
+  function endTime(){
+    return s_blocked() ? Math.max(km / VP + 3 * LAMBDA / CP, km / VS) + 10
+                       : km / VS + 3 * LAMBDA / CS + 10;
+  }
+
+  function updateReadout(){
+    var txt = '';
+    if (arrive.p !== null && arrive.s !== null){
+      txt = 'Distance ' + km + ' km: P arrived at ' + fmt(arrive.p) + ' s. S arrived at ' + fmt(arrive.s) + ' s.';
+      if (TEACHER) txt += ' S minus P: ' + fmt(arrive.s - arrive.p) + ' s.';
+    } else if (arrive.p !== null){
+      txt = 'Distance ' + km + ' km: P arrived at ' + fmt(arrive.p) + ' s. Waiting for S...';
+    }
+    readout.textContent = txt;
+    saveBtn.disabled = !(hist.length && (paused || (running && mode === 'pulse' && t >= endTime())));
+    recBtn.disabled = !(arrive.p !== null && (arrive.s !== null || (s_blocked() && t >= (mode === 'pulse' ? endTime() : km / VS + 10))));
+  }
+
+  function stop(){ t = 0; hist = []; arrive = {p: null, s: null}; running = false; updateReadout(); }
+  function restart(){ stop(); running = true; paused = false; document.getElementById('pause').textContent = 'Pause'; }
+
+  function setKm(v){
+    km = v;
+    Array.prototype.forEach.call(dwrap.children, function(b){ b.classList.toggle('on', +b.dataset.km === v); });
+    stop();
+  }
+
+  function applyDefaults(){
+    mode = 'pulse'; speed = 1; amp = 1; liquid = false; paused = false;
+    document.querySelector('input[name=mode][value=pulse]').checked = true;
+    document.getElementById('speed').value = 1;
+    document.getElementById('amp').value = 1;
+    document.getElementById('liquid').checked = false;
+    document.getElementById('pause').textContent = 'Pause';
+    setKm(DEFAULT_KM);
+  }
+
+  // ---- data table ----
+  function save(){ try { localStorage.setItem('ps-rows', JSON.stringify(rows)); } catch (e) {} }
+  function load(){ try { rows = JSON.parse(localStorage.getItem('ps-rows')) || []; } catch (e) { rows = []; } }
+  function headers(){
+    return ['Distance (km)', 'P arrival (s)', 'S arrival (s)', 'S minus P (s)'];
+  }
+  function cells(r){
+    var c = [r.km, fmt(r.p), fmt(r.s)];
+    // students fill this column in themselves; ?teacher shows the values
+    c.push(TEACHER && r.s !== null ? fmt(r.s - r.p) : (TEACHER ? 'none' : ''));
+    return c;
+  }
+  function render(){
+    document.getElementById('thead').innerHTML = '<tr>' + headers().map(function(h){ return '<th>' + h + '</th>'; }).join('') + '</tr>';
+    tbody.innerHTML = '';
+    rows.forEach(function(r){
+      var tr = document.createElement('tr');
+      cells(r).forEach(function(c){
+        var td = document.createElement('td'); td.textContent = c; tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  function note(s){ msg.textContent = s; holdUntil = performance.now() + 3500; }
+  function record(){
+    var row = {km: km, p: arrive.p, s: arrive.s, liq: liquid};
+    rows = rows.filter(function(r){ return !(r.km === row.km && r.liq === row.liq); });
+    rows.push(row);
+    rows.sort(function(a, b){ return (a.liq - b.liq) || (a.km - b.km); });
+    save(); render(); note('Saved.');
+  }
+  function copyData(){
+    if (!rows.length){ note('Nothing to copy yet.'); return; }
+    var lines = [headers().join('\t')];
+    rows.forEach(function(r){ lines.push(cells(r).join('\t')); });
+    var text = lines.join('\n');
+    function fallback(){
+      var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); note('Copied. Paste into cell A1 of your sheet.'); } catch (e) { note('Copy did not work. Select the table and copy it.'); }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(text).then(function(){ note('Copied. Paste into cell A1 of your sheet.'); }, fallback);
+    } else fallback();
+  }
+
+  var last = performance.now(), lastSig = '';
+  function frame(now){
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (performance.now() > holdUntil) msg.textContent = recBtn.disabled ? 'Send a wave and wait for the station to finish.' : 'Ready to record.';
+    var finished = running && mode === 'pulse' && t >= endTime();
+    if (running && !paused && !finished){
+      t += dt * speed * TS;
+      if (mode === 'pulse') t = Math.min(t, endTime());
+      var sx = stationX(), p = disp('p', sx, t), s = disp('s', sx, t), thr = 0.15 * amp;
+      hist.push({t: t, p: p, s: s});
+      if (hist.length > 8000) hist.shift();
+      if (arrive.p === null && Math.abs(p) > thr) arrive.p = km / VP;
+      if (arrive.s === null && Math.abs(s) > thr) arrive.s = km / VS;
+      updateReadout();
+    }
+    // skip redrawing when nothing changed (idle, paused or finished) to save CPU/GPU
+    var sig = [t, km, liquid, mode, amp, views.p.w, hist.length, arrive.p, arrive.s].join('|');
+    if (sig !== lastSig){
+      lastSig = sig;
+      drawWave(views.p, 'p'); drawWave(views.s, 's'); drawTrace(views.t);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  DISTS.forEach(function(v){
+    var b = document.createElement('button');
+    b.className = 'alt dist'; b.textContent = v + ' km'; b.dataset.km = v;
+    b.onclick = function(){ setKm(v); };
+    dwrap.appendChild(b);
+  });
+  document.getElementById('send').onclick = restart;
+  document.getElementById('reset').onclick = applyDefaults;
+  document.getElementById('pause').onclick = function(){
+    paused = !paused; this.textContent = paused ? 'Resume' : 'Pause'; updateReadout();
+  };
+  // Save the seismogram as a PNG: white background, title and P/S key, no arrival times in the caption.
+  saveBtn.onclick = function(){
+    var w = views.t.w, h = views.t.h, head = 44, dpr = window.devicePixelRatio || 1;
+    var cv = document.createElement('canvas');
+    cv.width = w * dpr; cv.height = (h + head) * dpr;
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#fff'; g.fillRect(0, 0, w, h + head);
+    g.fillStyle = '#1f2937'; g.font = 'bold 16px system-ui,Arial'; g.textAlign = 'left';
+    g.fillText('Seismogram - station ' + km + ' km from the earthquake', 14, 24);
+    g.fillStyle = P_COL; g.fillRect(14, 31, 14, 6); g.fillStyle = '#1f2937'; g.font = '13px system-ui,Arial'; g.fillText('P-wave', 34, 38);
+    g.fillStyle = S_COL; g.fillRect(100, 31, 14, 6); g.fillStyle = '#1f2937'; g.fillText('S-wave', 120, 38);
+    g.save(); g.translate(0, head);
+    drawTrace({g: g, w: w, h: h});
+    g.restore();
+    cv.toBlob(function(blob){
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'seismogram-' + km + 'km.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    }, 'image/png');
+  };
+  document.getElementById('speed').oninput = function(){ speed = +this.value; };
+  document.getElementById('amp').oninput = function(){ amp = +this.value; };
+  document.getElementById('liquid').onchange = function(){ liquid = this.checked; stop(); };
+  Array.prototype.forEach.call(document.getElementsByName('mode'), function(r){
+    r.onchange = function(){ mode = this.value; stop(); };
+  });
+  recBtn.onclick = record;
+  document.getElementById('copy').onclick = copyData;
+  var clearBtn = document.getElementById('clear'), clearTimer = null;
+  function disarm(){ clearTimeout(clearTimer); clearBtn.textContent = 'Clear table'; clearBtn.dataset.armed = ''; }
+  clearBtn.onclick = function(){
+    if (!rows.length){ note('The table is already empty.'); return; }
+    if (!clearBtn.dataset.armed){
+      clearBtn.dataset.armed = '1'; clearBtn.textContent = 'Click again to clear';
+      clearTimer = setTimeout(disarm, 3000);
+      return;
+    }
+    disarm(); rows = []; save(); render(); note('Table cleared.');
+  };
+  document.addEventListener('keydown', function(e){
+    if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); restart(); }
+  });
+  window.addEventListener('resize', resize);
+
+  load(); render(); resize(); applyDefaults();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
